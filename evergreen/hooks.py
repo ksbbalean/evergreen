@@ -179,10 +179,15 @@ doc_events = {
 		"onload": "evergreen.api.si_onload",
 		"on_submit": "evergreen.api.si_on_submit",
 		"on_cancel": "evergreen.api.si_on_cancel",
+		"validate": "evergreen.api.si_validate"
 	},
 	"Purchase Invoice": {
 		"onload": "evergreen.api.pi_onload",
-		"validate": "evergreen.batch_valuation.pi_validate",
+		"validate": [
+			"evergreen.batch_valuation.pi_validate",
+			"evergreen.api.pi_validate"
+		],
+		"before_submit": "evergreen.api.pi_before_submit",
 		"on_submit": "evergreen.api.pi_on_submit",
 		"on_cancel": [
 			"evergreen.api.pi_on_cancel", 
@@ -192,6 +197,9 @@ doc_events = {
 	},
 	"Batch": {
 		'before_naming': "evergreen.batch_valuation.override_batch_autoname",
+	},
+	"Payment Entry": {
+		"on_submit" : "evergreen.api.pe_on_submit"
 	},
 	"Purchase Receipt": {
 		"validate": "evergreen.batch_valuation.pr_validate",

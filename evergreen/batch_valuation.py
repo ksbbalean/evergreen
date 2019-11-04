@@ -155,8 +155,8 @@ def delete_batches(self, warehouse):
 		if row.batch_no and row.get(warehouse):
 			batch_no = frappe.get_doc("Batch", row.batch_no)
 
-			if self.get('production_order') and frappe.db.get_value("Production Order", self.production_order, 'batch'):
-				frappe.db.set_value("Production Order", self.production_order, 'batch', '')
+			if self.get('work_order') and frappe.db.get_value("Work Order", self.work_order, 'batch'):
+				frappe.db.set_value("Work Order", self.work_order, 'batch', '')
 
 			row.batch_no = ''
 			check_if_doc_is_linked(batch_no)
@@ -199,6 +199,9 @@ def get_batch_no(doctype, txt, searchfield, start, page_len, filters):
 
 	if filters.get("posting_date"):
 		cond = "and (batch.expiry_date is null or batch.expiry_date >= %(posting_date)s)"
+		
+	if filters.get("customer"):
+		cond = "and batch.customer = %(customer)s"
 
 	batch_nos = None
 	args = {

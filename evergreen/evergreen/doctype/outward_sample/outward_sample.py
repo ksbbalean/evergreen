@@ -15,6 +15,9 @@ class OutwardSample(Document):
 	def before_save(self):
 		party_detail = get_party_details(party = self.party,party_type = self.link_to)
 		self.party_name = party_detail.party_name
+		self.get_master_sample()
+		self.get_latest_ball_mill()
+		self.get_latest_sample()
 	
 	def on_cancel(self):
 		self.db_set('against','')
@@ -64,8 +67,26 @@ class OutwardSample(Document):
 		self.total_amount = total_amount
 		self.total_qty = bm.total_qty
 		self.per_unit_price = total_amount / bm.total_qty
+		
+	def get_master_sample(self):
+		master_sample = db.sql("select name from `tabOutward Sample` \
+				where docstatus = 1 and product_name = %s and party = %s and is_master_sample = 1", (self.product_name, self.party))
 
-
+		if master_sample:
+			self.master_sample = master_sample[0][0]
+			
+	def get_latest_ball_mill(self):
+		ball_mill = db.sql("select name, date from `tabBall Mill Data Sheet` \
+				where docstatus = 1 and product_name = %s and customer_name = %s ORDER BY date DESC", (self.product_name, self.party))
+		if ball_mill:
+			self.last_purchase_reference = ball_mill[0][0]
+			
+	def get_latest_sample(self):
+		last_sample = db.sql("select name,date from `tabOutward Sample` \
+				where docstatus = 1 and product_name = %s and party = %s ORDER BY date DESC", (self.product_name, self.party))
+		if last_sample:
+			self.last_sample = last_sample[0][0]
+			
 @frappe.whitelist()
 def make_quotation(source_name, target_doc=None):
 	def postprocess(source, target):
