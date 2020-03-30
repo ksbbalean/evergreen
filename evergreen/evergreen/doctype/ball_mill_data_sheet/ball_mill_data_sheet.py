@@ -186,3 +186,22 @@ def make_outward_sample(source_name, target_doc=None):
 	}, target_doc, postprocess)
 
 	return doc
+	
+def get_sales_order(doctype, txt, searchfield, start, page_len, filters):
+	meta = frappe.get_meta("Sales Order")
+	searchfield = meta.get_search_fields()
+
+	sales_order_list = frappe.db.sql("""
+			SELECT so.name from `tabSales Order` as so 
+			LEFT JOIN `tabSales Order Item` as soi 
+			ON so.name = soi.parent
+			WHERE so.docstatus = '1' and so.customer  = '{0}' and soi.item_code = '{1}' """ 
+			.format(filters.get("customer_name"),filters.get("product_name")))
+	
+	return sales_order_list
+	
+@frappe.whitelist()
+def get_sample_no(parent,item_code):
+	value = frappe.db.get_value("Sales Order Item", {'parent': parent,'item_code': item_code}, 'outward_sample')
+	return value
+	

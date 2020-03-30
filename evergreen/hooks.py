@@ -29,6 +29,8 @@ app_include_css = [
 	"/assets/css/evergreen.min.css",
 	"assets/css/summernote.min.css"
 ]
+doctype_js = {"Production Plan": "public/js/doctype_js/production_plan.js"}
+	
 
 # include js, css files in header of web template
 # web_include_css = "/assets/evergreen/css/evergreen.css"
@@ -179,7 +181,8 @@ doc_events = {
 		"onload": "evergreen.api.si_onload",
 		"on_submit": "evergreen.api.si_on_submit",
 		"on_cancel": "evergreen.api.si_on_cancel",
-		"validate": "evergreen.api.si_validate"
+		"validate": "evergreen.api.si_validate",
+		"before_update_after_submit": "evergreen.api.before_update_after_submit",
 	},
 	"Purchase Invoice": {
 		"onload": "evergreen.api.pi_onload",

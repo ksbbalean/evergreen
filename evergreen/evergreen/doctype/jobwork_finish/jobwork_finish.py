@@ -17,6 +17,9 @@ class JobworkFinish(Document):
 		if self._action == 'submit':
 			self.validate_qty()
 
+	def before_save(self):
+		self.update_additional_cost()
+
 	def validate_fields(self):
 		for row in self.items:
 			if not row.jobwork_challan:
@@ -145,3 +148,15 @@ class JobworkFinish(Document):
 			self.db_set('received_stock_entry','')
 			url = get_url_to_form("Stock Entry", se.name)
 			frappe.msgprint("Cancelled Stock Entry - <a href='{url}'>{doc}</a>".format(url=url, doc=frappe.bold(se.name)))
+
+	def update_additional_cost(self):
+		if self.is_new() and not self.amended_from:
+			self.append("additional_costs",{
+				'description': "Spray drying cost",
+				'amount': self.volume_cost
+			})
+		else:
+			for row in self.additional_costs:
+				if row.description == "Spray drying cost":
+					row.amount = self.volume_cost
+				break

@@ -5,6 +5,7 @@
 from __future__ import unicode_literals
 import frappe
 from frappe import _, db
+from frappe.utils import flt
 from frappe.model.document import Document
 from evergreen.api import get_spare_price,get_party_details
 from frappe.model.mapper import get_mapped_doc
@@ -15,6 +16,7 @@ class OutwardSample(Document):
 	def before_save(self):
 		party_detail = get_party_details(party = self.party,party_type = self.link_to)
 		self.party_name = party_detail.party_name
+		self.cal_yield_rate()
 		self.get_master_sample()
 		self.get_latest_ball_mill()
 		self.get_latest_sample()
@@ -22,52 +24,68 @@ class OutwardSample(Document):
 	def on_cancel(self):
 		self.db_set('against','')
 		
-	def get_ball_mill(self):
-		if not self.ball_mill_ref:
-			frappe.throw(_("Please select Ball Mill Data Sheet!"))
+	# def get_ball_mill(self):
+		# if not self.ball_mill_ref:
+			# frappe.throw(_("Please select Ball Mill Data Sheet!"))
 
-		bm = frappe.get_doc("Ball Mill Data Sheet", self.ball_mill_ref)
-		self.product_name = bm.product_name
-		self.link_to = "Customer"
-		self.party = bm.customer_name
-		self.batch_yield = bm.total_yield
+		# bm = frappe.get_doc("Ball Mill Data Sheet", self.ball_mill_ref)
+		# self.product_name = bm.product_name
+		# self.link_to = "Customer"
+		# self.party = bm.customer_name
+		# self.batch_yield = bm.total_yield
 
-		customer_name, destination = db.get_value("Customer", bm.customer_name, ['customer_name', 'territory'])
-		self.party_name = customer_name
-		self.destination_1 = self.destination = destination
+		# customer_name, destination = db.get_value("Customer", bm.customer_name, ['customer_name', 'territory'])
+		# self.party_name = customer_name
+		# self.destination_1 = self.destination = destination
 
-		self.set("details", [])
+		# self.set("details", [])
 
-		total_amount = 0.0
-		for row in bm.items:
-			price = get_spare_price(row.item_name, "Standard Buying").price_list_rate
+		# total_amount = 0.0
+		# for row in bm.items:
+			# price = get_spare_price(row.item_name, "Standard Buying").price_list_rate
 
-			if row.batch_yield:
-				bomyield = frappe.db.get_value("BOM",{'item': row.item_name},"batch_yield")
-				if bomyield != 0:
-					rate = (price * flt(bomyield)) / row.batch_yield
-				else:
-					rate = (price * 2.2) / row.batch_yield
-			else:
-				rate = price
+			# if row.batch_yield:
+				# bomyield = frappe.db.get_value("BOM",{'item': row.item_name},"batch_yield")
+				# if bomyield != 0:
+					# rate = (price * flt(bomyield)) / row.batch_yield
+				# else:
+					# rate = (price * 2.2) / row.batch_yield
+			# else:
+				# rate = price
 
-			amount = rate * row.quantity
-			total_amount += amount
+			# amount = rate * row.quantity
+			# total_amount += amount
 
-			self.append('details',{
-					'item_name': row.item_name,
-					'batch_yield': row.batch_yield,
-					'quantity': row.quantity,
-					'rate': rate,
-					'price_list_rate': price,
-					'amount': amount,
+			# self.append('details',{
+					# 'item_name': row.item_name,
+					# 'batch_yield': row.batch_yield,
+					# 'quantity': row.quantity,
+					# 'rate': rate,
+					# 'price_list_rate': price,
+					# 'amount': amount,
 
-				})
+				# })
 
-		self.total_amount = total_amount
-		self.total_qty = bm.total_qty
-		self.per_unit_price = total_amount / bm.total_qty
+		# self.total_amount = total_amount
+		# self.total_qty = bm.total_qty
+		# self.per_unit_price = total_amount / bm.total_qty
 		
+	def cal_yield_rate(self):
+		for row in self.details:
+			if row.concentration:
+				bom_concentration = frappe.db.get_value("BOM",{'item':row.item_name,'is_default':1},'concentration') or 100.0
+				batch_yield = flt(frappe.db.get_value("BOM",{'item':row.item_name,'is_default':1},'batch_yield')) or 1.0
+				if batch_yield:
+					row.batch_yield = flt(batch_yield)* 100 / flt(row.concentration)
+				
+				if bom_concentration:
+					rate = flt((row.price_list_rate * flt(row.concentration)) / bom_concentration)
+				elif row.batch_yield and batch_yield:
+					rate = flt((row.price_list_rate * batch_yield) / row.batch_yield)
+				else:
+					rate = flt(row.price_list_rate)
+				row.rate = rate
+	
 	def get_master_sample(self):
 		master_sample = db.sql("select name from `tabOutward Sample` \
 				where docstatus = 1 and product_name = %s and party = %s and is_master_sample = 1", (self.product_name, self.party))

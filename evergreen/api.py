@@ -6,11 +6,13 @@ from frappe import _, sendmail, db
 from erpnext.utilities.product import get_price
 from frappe.model.mapper import get_mapped_doc
 from frappe.desk.reportview import get_match_cond, get_filters_cond
+from erpnext.manufacturing.doctype.bom.bom import add_additional_cost
 from frappe.contacts.doctype.address.address import get_address_display, get_default_address
 from frappe.contacts.doctype.contact.contact import get_contact_details, get_default_contact
 from erpnext.manufacturing.doctype.work_order.work_order import WorkOrder
 from frappe.utils.background_jobs import enqueue
 from erpnext.selling.doctype.customer.customer import Customer
+from erpnext.manufacturing.doctype.production_plan.production_plan import ProductionPlan
 from erpnext.buying.doctype.supplier.supplier import Supplier
 from erpnext.controllers.accounts_controller import AccountsController, get_payment_terms
 import functools
@@ -52,10 +54,219 @@ def pi_onload(self, method):
 def si_validate(self, method):
 	override_due_date()
 
+def before_update_after_submit(self,method):
+	self.set_payment_schedule()
+
 @frappe.whitelist()
 def pi_validate(self, method):
 	override_due_date()
 	
+@frappe.whitelist()
+def override_proplan_functions():
+	
+	ProductionPlan.get_open_sales_orders = get_open_sales_orders
+	ProductionPlan.get_items = get_items_from_sample
+
+@frappe.whitelist()
+def get_items_from_sample(self):
+	if self.get_items_from == "Sales Order":
+			get_so_items(self)
+	elif self.get_items_from == "Material Request":
+			self.get_mr_items()
+
+def get_so_items(self):
+		so_list = [d.sales_order for d in self.get("sales_orders", []) if d.sales_order]
+		if not so_list:
+			msgprint(_("Please enter Sales Orders in the above table"))
+			return []
+		item_condition = ""
+		if self.item_code:
+			item_condition = ' and so_item.item_code = "{0}"'.format(frappe.db.escape(self.item_code))
+	# -----------------------	custom added code  ------------#
+
+		if self.as_per_projected_qty == 1:                                                           #condition 1
+			sample_list = [[d.outward_sample, d.quantity ,d.projected_qty] for d in self.get("finish_items", []) if d.outward_sample]	
+			if not sample_list:
+				frappe.msgprint(_("Please Get Finished Items."))
+				return []	
+			item_details = frappe._dict()
+
+			for sample, quantity ,projected_qty in sample_list:#changes here
+				if projected_qty < 0:
+					sample_doc = frappe.get_doc("Outward Sample",sample)
+					for row in sample_doc.details:
+						bom_no = frappe.db.exists("BOM", {'item':row.item_code,'is_active':1,'is_default':1,'docstatus':1})
+						
+						if bom_no:
+							bom = frappe.get_doc("BOM", {'item':row.item_code,'is_active':1,'is_default':1,'docstatus':1})
+							item_details.setdefault(row.item_code, frappe._dict({
+								'planned_qty': 0.0,
+								'bom_no': bom.name,
+								'item_code': row.item_code,
+								'concentration' : bom.concentration
+							}))
+							
+							item_details[row.item_code].planned_qty += (flt(abs(projected_qty)) * flt(row.quantity) * flt(row.concentration))/ (flt(sample_doc.total_qty) * flt(bom.concentration) )
+			
+			items = [values for values in item_details.values()]
+
+		elif self.as_per_actual_qty == 1:															 #condition 2
+			
+			sample_list = [[d.outward_sample, d.quantity,d.actual_qty] for d in self.get("finish_items", []) if d.outward_sample]	
+			if not sample_list:
+				frappe.msgprint(_("Please Get Finished Items."))
+				return []	
+			item_details = frappe._dict()
+			for sample, quantity, actual_qty in sample_list:
+				diff = actual_qty - quantity #changes here
+				if diff < 0:
+					sample_doc = frappe.get_doc("Outward Sample",sample)
+
+					for row in sample_doc.details:
+						bom_no = frappe.db.exists("BOM", {'item':row.item_code,'is_active':1,'is_default':1,'docstatus':1})
+						if bom_no:
+							bom = frappe.get_doc("BOM", {'item':row.item_code,'is_active':1,'is_default':1,'docstatus':1})
+							item_details.setdefault(row.item_code, frappe._dict({
+								'planned_qty': 0.0,
+								'bom_no': bom.name,
+								'item_code': row.item_code,
+								'concentration' : bom.concentration
+							}))
+							
+							item_details[row.item_code].planned_qty += (flt(abs(diff)) * flt(row.quantity) * flt(row.concentration)) / (flt(sample_doc.total_qty) * flt(bom.concentration))
+							
+			items = [values for values in item_details.values()]
+
+		else:		
+																						 #default
+			sample_list = [[d.outward_sample, d.quantity] for d in self.get("finish_items", []) if d.outward_sample]	
+			if not sample_list:
+				frappe.msgprint(_("Please Get Finished Items."))
+				return []	
+			item_details = frappe._dict()
+			for sample, quantity in sample_list:
+				sample_doc = frappe.get_doc("Outward Sample",sample)
+
+				for row in sample_doc.details:
+					bom_no = frappe.db.exists("BOM", {'item':row.item_code,'is_active':1,'is_default':1,'docstatus':1})
+					if bom_no:
+						bom = frappe.get_doc("BOM", {'item':row.item_code,'is_active':1,'is_default':1,'docstatus':1})
+						# frappe.msgprint(str(bom.name))
+					
+						item_details.setdefault(row.item_code, frappe._dict({
+							'planned_qty': 0.0,
+							'bom_no': bom.name,
+							'item_code': row.item_code,
+							'concentration' : bom.concentration
+						}))
+						
+						item_details[row.item_code].planned_qty += (flt(quantity) * flt(row.quantity) * (row.concentration))/ (flt(sample_doc.total_qty)* (bom.concentration))
+
+			items = [values for values in item_details.values()]
+			
+	# -----------------------	
+		# items = frappe.db.sql("""select distinct parent, item_code, warehouse,
+		# 	(qty - work_order_qty) * conversion_factor as pending_qty, name
+		# 	from `tabSales Order Item` so_item
+		# 	where parent in (%s) and docstatus = 1 and qty > work_order_qty
+		# 	and exists (select name from `tabBOM` bom where bom.item=so_item.item_code
+		# 			and bom.is_active = 1) %s""" % \
+		# 	(", ".join(["%s"] * len(so_list)), item_condition), tuple(so_list), as_dict=1)
+
+		if self.item_code:
+			item_condition = ' and so_item.item_code = "{0}"'.format(frappe.db.escape(self.item_code))
+
+		packed_items = frappe.db.sql("""select distinct pi.parent, pi.item_code, pi.warehouse as warehouse,
+			(((so_item.qty - so_item.work_order_qty) * pi.qty) / so_item.qty)
+				as pending_qty, pi.parent_item, so_item.name
+			from `tabSales Order Item` so_item, `tabPacked Item` pi
+			where so_item.parent = pi.parent and so_item.docstatus = 1
+			and pi.parent_item = so_item.item_code
+			and so_item.parent in (%s) and so_item.qty > so_item.work_order_qty
+			and exists (select name from `tabBOM` bom where bom.item=pi.item_code
+					and bom.is_active = 1) %s""" % \
+			(", ".join(["%s"] * len(so_list)), item_condition), tuple(so_list), as_dict=1)
+
+		add_items(self,items + packed_items)
+		calculate_total_planned_qty(self)
+
+def add_items(self, items):
+	# frappe.msgprint("call add")
+	self.set('po_items', [])
+	for data in items:
+		item_details = get_item_details(data.item_code)
+		pi = self.append('po_items', {
+			'include_exploded_items': 1,
+			'warehouse': data.warehouse,
+			'item_code': data.item_code,
+			'description': item_details and item_details.description or '',
+			'stock_uom': item_details and item_details.stock_uom or '',
+			'bom_no': item_details and item_details.bom_no or '',
+			# 'planned_qty': data.pending_qty, 
+			'concentration': data.concentration,
+			'planned_qty':data.planned_qty,
+			'pending_qty': data.pending_qty,
+			'planned_start_date': now_datetime(),
+			'product_bundle_item': data.parent_item
+		})
+
+		if self.get_items_from == "Sales Order":
+			pi.sales_order = data.parent
+			pi.sales_order_item = data.name
+
+		elif self.get_items_from == "Material Request":
+			pi.material_request = data.parent
+			pi.material_request_item = data.name
+
+def calculate_total_planned_qty(self):
+		self.total_planned_qty = 0
+		for d in self.po_items:
+			self.total_planned_qty += flt(d.planned_qty)
+
+
+def get_sales_orders(self):
+	so_filter = item_filter = ""
+	if self.from_date:
+		so_filter += " and so.transaction_date >= %(from_date)s"
+	if self.to_date:
+		so_filter += " and so.transaction_date <= %(to_date)s"
+	if self.customer:
+		so_filter += " and so.customer = %(customer)s"
+	if self.project:
+		so_filter += " and so.project = %(project)s"
+
+	if self.item_code:
+		item_filter += " and so_item.item_code = %(item)s"
+
+	open_so = frappe.db.sql("""
+		select distinct so.name, so.transaction_date, so.customer, so.base_grand_total
+		from `tabSales Order` so, `tabSales Order Item` so_item
+		where so_item.parent = so.name
+			and so.docstatus = 1 and so.status not in ("Stopped", "Closed","Completed")
+			and so.company = %(company)s
+			and so_item.qty > so_item.work_order_qty {0} {1}
+
+		""".format(so_filter, item_filter), {
+			"from_date": self.from_date,
+			"to_date": self.to_date,
+			"customer": self.customer,
+			"project": self.project,
+			"item": self.item_code,
+			"company": self.company
+
+		}, as_dict=1)
+
+	return open_so
+
+
+def get_open_sales_orders(self):
+		""" Pull sales orders  which are pending to deliver based on criteria selected"""
+		open_so = get_sales_orders(self)
+		if open_so:
+			self.add_so_in_table(open_so)
+		else:
+			frappe.msgprint(_("Sales orders are not available for production"))
+
 def override_due_date():
 	AccountsController.validate_due_date = validate_due_date
 	
@@ -520,7 +731,15 @@ def bom_before_save(self, method):
 
 	if self.per_unit_price != per_unit_price:
 		self.per_unit_price  = per_unit_price
-		
+	
+def bom_on_submit(self, method):
+	operating_cost = flt(self.volume_quantity * self.volume_rate)
+	self.total_cost = self.raw_material_cost + self.total_operational_cost + operating_cost - self.scrap_material_cost 
+	per_unit_price = flt(self.total_cost) / flt(self.quantity)
+	self.operating_cost = operating_cost
+
+	if self.per_unit_price != per_unit_price:
+		self.per_unit_price  = per_unit_price	
 
 @frappe.whitelist()
 def enqueue_update_cost():
@@ -577,13 +796,18 @@ def update_outward_sample(doc_name):
 			price = get_spare_price(row.item_name, outward.price_list or "Standard Buying")
 			row.db_set('rate', price.price_list_rate)
 			row.db_set('price_list_rate', price.price_list_rate)
+		
+		if row.concentration != 0:
+			bom_concentration = frappe.db.get_value("BOM",{'item':row.item_name,'is_default':1},'concentration')
+			bomyield = frappe.db.get_value("BOM",{'item':row.item_name,'is_default':1},'batch_yield')						
+		
+			if bom_concentration !=0:
+				row.db_set('rate',(flt(row.price_list_rate)) * flt(row.concentration) / bom_concentration)
 
-		if row.batch_yield:
-			bomyield = frappe.db.get_value("BOM",{'item': row.item_name},"batch_yield")
-			if bomyield != 0:
+			elif bomyield !=0 & row.batch_yield !=0:
 				row.db_set('rate',(flt(row.price_list_rate)) * flt(bomyield) / row.batch_yield)
 			else:
-				row.db_set('rate',(flt(row.price_list_rate) * 2.2) / row.batch_yield)
+				row.db_set('rate',(flt(row.price_list_rate)))
 
 		row.db_set('amount', flt(row.quantity) * flt(row.rate))
 
@@ -897,6 +1121,7 @@ def sales_order_query(doctype, txt, searchfield, start, page_len, filters):
 		where so.docstatus = 1
 			and so.status != "Closed"
 			and so.customer = %(customer)s
+			and soi.item_code = %(item_code)s
 			and ({searchfield})
 		order by
 			if(locate(%(_txt)s, so.name), locate(%(_txt)s, so.name), 99999)
@@ -905,6 +1130,7 @@ def sales_order_query(doctype, txt, searchfield, start, page_len, filters):
 			'_txt': txt.replace("%", ""),
 			'start': start,
 			'page_len': page_len,
+			'item_code': filters.get('item_code'),
 			'customer': filters.get('customer')
 		})
 		
@@ -1021,12 +1247,13 @@ def validate_purchase_receipt(self):
 			pr_name,pr_item, pr_qty = frappe.db.get_value("Purchase Receipt Item",row.pr_detail,['name','item_code','qty'])
 			if row.item_code == pr_item and row.pr_detail == pr_name:
 				total_qty = frappe.db.sql("""
-								select sum(qty) from `tabPurchase Invoice Item` 
-								where pr_detail = %s
+								select sum(pii.qty) from `tabPurchase Invoice Item` as pii
+								join `tabPurchase Invoice` as pi on (pii.parent = pi.name)
+								where pii.pr_detail = %s and pi.docstatus != 2
 							""", pr_name)[0][0]
 				#total_qty = sum([flt(d.qty) for d in self.items])
-				if total_qty != pr_qty:
-					frappe.throw(_("Not allowed to change the qty for <b>{0}</b> in row {1}").format(row.item_code,row.idx))
+				if flt(total_qty) != pr_qty:
+					frappe.throw(_("Invoice qty {0} is not matching with purchase receipt qty {1} for item <b>{2}</b>").format(total_qty,pr_qty,row.item_code))
 			
 @frappe.whitelist()
 def docs_before_naming(self, method):
