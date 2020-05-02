@@ -18,17 +18,17 @@ app_license = "GPL 3.0"
 # app_include_css = "/assets/evergreen/css/evergreen.css"
 # app_include_js = "/assets/evergreen/js/evergreen.js"
 
-app_include_js = [
-	"assets/js/summernote.min.js",
-	"assets/js/comment_desk.min.js",
-	"assets/js/editor.min.js",
-	"assets/js/timeline.min.js"
-]
+# app_include_js = [
+	# "assets/js/summernote.min.js",
+	# "assets/js/comment_desk.min.js",
+	# "assets/js/editor.min.js",
+	# "assets/js/timeline.min.js"
+# ]
 
-app_include_css = [
-	"/assets/css/evergreen.min.css",
-	"assets/css/summernote.min.css"
-]
+# app_include_css = [
+	# "/assets/css/evergreen.min.css",
+	# "assets/css/summernote.min.css"
+# ]
 doctype_js = {"Production Plan": "public/js/doctype_js/production_plan.js"}
 	
 
@@ -221,9 +221,15 @@ doc_events = {
 		"on_submit": "evergreen.api.dn_on_submit",
 		"before_cancel": "evergreen.api.dn_before_cancel",
 	},
+	"Stock Ledger Entry": {
+		"before_submit": "evergreen.api.sl_before_submit"
+	},
 	("Sales Invoice", "Purchase Invoice", "Payment Request", "Payment Entry", "Journal Entry", "Material Request", "Purchase Order", "Work Order", "Production Plan", "Stock Entry", "Quotation", "Sales Order", "Delivery Note", "Purchase Receipt", "Packing Slip"): {
 		"before_naming": "evergreen.api.docs_before_naming",
-	}
+	},
+	"Fiscal Year": {
+		'before_save': 'elkins.api.fiscal_before_save'
+	},
 }
 
 scheduler_events = {

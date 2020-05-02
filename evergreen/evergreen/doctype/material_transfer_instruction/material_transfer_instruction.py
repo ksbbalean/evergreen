@@ -15,6 +15,7 @@ from erpnext.stock.doctype.batch.batch import get_batch_no, set_batch_nos, get_b
 import json
 
 from erpnext.controllers.stock_controller import StockController
+from six import string_types
 
 form_grid_templates = {
 	"items": "templates/form_grid/stock_entry_grid.html"
@@ -50,6 +51,7 @@ class MaterialTransferInstruction(StockController):
 
 	def on_submit(self):
 		self.update_work_order()
+		self.batch_validation()
 
 	def on_cancel(self):
 		self.check_stock_entries()
@@ -140,6 +142,12 @@ class MaterialTransferInstruction(StockController):
 				if expiry_date:
 					if getdate(self.posting_date) > getdate(expiry_date):
 						frappe.throw(_("Batch {0} of Item {1} has expired.").format(item.batch_no, item.item_code))
+						
+	def batch_validation(self):
+		for item in self.get("items"):
+			has_batch_no = frappe.db.get_value("Item",item.item_code,'has_batch_no')
+			if has_batch_no and not item.batch_no:
+				frappe.throw(_("Row: {} Please select the batch for item {}").format(item.idx, item.item_code))
 
 	def set_incoming_rate(self):
 		for d in self.items:
@@ -241,7 +249,7 @@ class MaterialTransferInstruction(StockController):
 			'description'		  	: item.description,
 			'image'					: item.image,
 			'item_name' 		  	: item.item_name,
-			'cost_center'			: get_default_cost_center(args, item, item_group_defaults, self.company),
+			'cost_center'			: item.get('buying_cost_center'),
 			'qty'					: args.get("qty"),
 			'transfer_qty'			: args.get('qty'),
 			'conversion_factor'		: 1,
@@ -483,7 +491,8 @@ def get_additional_costs(work_order=None, bom_no=None, fg_qty=None):
 
 		additional_costs.append({
 			"description": "Additional Operating Cost",
-			"amount": additional_operating_cost_per_unit * flt(fg_qty)
+			"amount": additional_operating_cost_per_unit * flt(fg_qty),
+			'expense_account': 'Spray Drying Cost - EG'
 		})
 
 	return additional_costs
@@ -528,7 +537,7 @@ def get_uom_details(item_code, uom, qty):
 
 @frappe.whitelist()
 def get_warehouse_details(args):
-	if isinstance(args, basestring):
+	if isinstance(args, string_types):
 		args = json.loads(args)
 
 	args = frappe._dict(args)

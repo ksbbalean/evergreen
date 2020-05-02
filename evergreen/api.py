@@ -32,7 +32,8 @@ def si_on_cancel(self, method):
 
 @frappe.whitelist()
 def pe_on_submit(self, method):
-	validate_approval_key(self)
+	validate_hold_invoice(self)
+	#validate_approval_key(self)
 
 def validate_approval_key(self):
 	for row in self.references:
@@ -497,8 +498,9 @@ def update_work_order_qty(self):
 def stock_entry_before_save(self, method):
 	get_based_on(self)
 	cal_target_yield_cons(self)
-	if self.purpose == 'Repack' and cint(self.from_ball_mill) != 1:
+	if self.purpose in ['Repack','Material Issue','Manufacture'] and cint(self.from_ball_mill) != 1:
 		self.get_stock_and_rate()
+		
 	update_expence_account(self)
 	update_additional_cost(self)
 	
@@ -511,20 +513,23 @@ def update_additional_cost(self):
 		if self.is_new() and not self.amended_from:
 			self.append("additional_costs",{
 				'description': "Spray drying cost",
-				'amount': self.volume_cost
+				'amount': self.volume_cost,
+				'expense_account': 'Spray Drying Cost - EG'
 			})
 			if hasattr(self, 'etp_qty'):
 				self.append("additional_costs",{
 					'description': "ETP cost",
-					'amount': flt(self.etp_qty * self.etp_rate)
+					'amount': flt(self.etp_qty * self.etp_rate),
+					'expense_account': 'Spray Drying Cost - EG'
 				})
 		else:
 			for row in self.additional_costs:
 				if row.description == "Spray drying cost":
 					row.amount = self.volume_cost
+					break
 				if hasattr(self, 'etp_qty') and row.description == "ETP cost":
 					row.amount = flt(self.etp_qty * self.etp_rate)
-				break
+				
 
 def cal_target_yield_cons(self):
 	cal_yield = 0
@@ -569,6 +574,7 @@ def cal_target_yield_cons(self):
 def stock_entry_on_submit(self, method):
 	update_po(self)
 	update_expence_account(self)
+	validate_difference(self)
 
 def update_po(self,ignore_permissions = True):
 	if self.purpose in ["Material Transfer for Manufacture", "Manufacture"] and self.work_order:
@@ -1440,7 +1446,7 @@ def jobwork_update():
 		
 @frappe.whitelist()
 def make_stock_entry(work_order_id, purpose, qty=None):
-	from erpnext.stock.doctype.stock_entry.stock_entry import get_additional_costs
+	#from erpnext.stock.doctype.stock_entry.stock_entry import get_additional_costs
 
 	work_order = frappe.get_doc("Work Order", work_order_id)
 	if not frappe.db.get_value("Warehouse", work_order.wip_warehouse, "is_group") \
@@ -1450,6 +1456,7 @@ def make_stock_entry(work_order_id, purpose, qty=None):
 		wip_warehouse = None
 	stock_entry = frappe.new_doc("Stock Entry")
 	stock_entry.purpose = purpose
+	stock_entry.stock_entry_type = purpose
 	stock_entry.work_order = work_order_id
 	stock_entry.company = work_order.company
 	stock_entry.from_bom = 1
@@ -1563,7 +1570,8 @@ def get_items(self):
 		if self.work_order and self.purpose == "Manufacture":
 			self.set_serial_nos(self.work_order)
 			work_order = frappe.get_doc('Work Order', self.work_order)
-			add_additional_cost(self, work_order)
+			
+			#add_additional_cost(self, work_order) don't want to add additional cost in stock entry from BOM
 
 		# add finished goods item
 		if self.purpose in ("Manufacture", "Repack"):
@@ -1771,3 +1779,38 @@ def update_expence_account(self):
 	if self.purpose == "Material Issue" and self.from_bom and self.bom_no:
 		for row in self.items:
 			row.expense_account = 'Cost of Goods Sold - %s' % abbr
+			
+def validate_difference(self):
+	if self.purpose in ['Material Transfer','Material Transfer for Manufacture','Repack','Manufacture']:
+		if round(self.value_difference/100,0) != round(self.total_additional_costs/100,0):
+			frappe.throw("ValuationError: Value difference between incoming and outgoing amount is higher than additional cost")
+
+def sl_before_submit(self, method):
+	batch_qty_validation_with_date_time(self)
+	
+def batch_qty_validation_with_date_time(self):
+	if self.batch_no and not self.get("allow_negative_stock"):
+		batch_bal_after_transaction = flt(frappe.db.sql("""select sum(actual_qty)
+			from `tabStock Ledger Entry`
+			where warehouse=%s and item_code=%s and batch_no=%s and concat(posting_date, ' ', posting_time) <= %s %s """,
+			(self.warehouse, self.item_code, self.batch_no, self.posting_date, self.posting_time))[0][0])
+		
+		if flt(batch_bal_after_transaction) < 0:
+			frappe.throw(_("Stock balance in Batch {0} will become negative {1} for Item {2} at Warehouse {3} at date {4} and time {5}")
+				.format(self.batch_no, batch_bal_after_transaction, self.item_code, self.warehouse, self.posting_date, self.posting_time))
+
+def fiscal_before_save(self,method):
+	start_date = str(self.year_start_date)
+	end_date = str(self.year_end_date)
+
+	fiscal = start_date.split("-")[0][2:] + end_date.split("-")[0][2:]
+	self.fiscal = fiscal
+
+def validate_hold_invoice(self):
+	if self.references:
+		for row in self.references:
+			if row.reference_name:
+				doc = frappe.get_doc(row.reference_doctype,row.reference_name)
+				if hasattr(doc,'on_hold'):
+					if doc.on_hold:
+						frappe.throw(_("Row {}: Document <b>{}</b> is on hold".format(row.idx,row.reference_name)))

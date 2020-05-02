@@ -51,6 +51,7 @@ class BallMillDataSheet(Document):
 	def on_submit(self):
 		se = frappe.new_doc("Stock Entry");
 		se.purpose = "Repack"
+		se.stock_entry_type = "Repack"
 		se.set_posting_time = 1
 		se.company = "Evergreen Industries"
 		se.posting_date = self.date
@@ -116,13 +117,15 @@ class BallMillDataSheet(Document):
 		
 	def on_cancel(self):
 		if self.stock_entry:
+			for row in self.packaging:
+				row.db_set('batch_no', '')
+				
 			se = frappe.get_doc("Stock Entry",self.stock_entry)
 			se.cancel()
 			self.db_set('stock_entry','')
 			frappe.db.commit()
 
-			for row in self.packaging:
-				row.db_set('batch_no', '')
+			
 		
 	def cal_total(self):
 		self.amount = sum([flt(row.basic_amount) for row in self.items])
