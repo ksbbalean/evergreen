@@ -26,8 +26,8 @@ class AdvanceAuthorisationLicense(Document):
 
 	def calulate_total_imports_exports(self):
 		self.total_import_qty = sum([flt(d.quantity) for d in self.get('imports')])
+		self.total_import_amount = sum([flt(d.cif_value) for d in self.get('imports')])
 		if self.total_import_amount < self.approved_amount:
-			self.total_import_amount = sum([flt(d.cif_value) for d in self.get('imports')])
 			self.remaining_license_amount = flt(self.approved_amount) - self.total_import_amount	
 		else:
 			frappe.throw(_("AdvanceAuthorisationLicense {} total approved amount is less than utilization".format(self.name)))
