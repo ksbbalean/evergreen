@@ -129,10 +129,11 @@ class BallMillDataSheet(Document):
 		
 	def cal_total(self):
 		self.amount = sum([flt(row.basic_amount) for row in self.items])
+		self.actual_qty = sum([flt(row.quantity) for row in self.items])
 		self.per_unit_amount = self.amount/ self.actual_qty
 	
 	def validate_qty(self):
-		total_qty = sum([flt(row.qty) for row in self.packaging])
+		total_qty = sum([flt(row.qty) for row in self.packaging])	
 		if self.actual_qty != total_qty:
 			frappe.throw("Sum of Qty should be match with actual qty")
 
@@ -189,7 +190,8 @@ def make_outward_sample(source_name, target_doc=None):
 	}, target_doc, postprocess)
 
 	return doc
-	
+
+@frappe.whitelist()
 def get_sales_order(doctype, txt, searchfield, start, page_len, filters):
 	meta = frappe.get_meta("Sales Order")
 	searchfield = meta.get_search_fields()
@@ -198,7 +200,7 @@ def get_sales_order(doctype, txt, searchfield, start, page_len, filters):
 			SELECT so.name from `tabSales Order` as so 
 			LEFT JOIN `tabSales Order Item` as soi 
 			ON so.name = soi.parent
-			WHERE so.docstatus = '1' and so.customer  = '{0}' and soi.item_code = '{1}' """ 
+			WHERE so.docstatus = '1' and so.customer  = '{0}' and soi.item_code = '{1}' and status NOT IN ('Closed','Completed')""" 
 			.format(filters.get("customer_name"),filters.get("product_name")))
 	
 	return sales_order_list

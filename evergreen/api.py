@@ -1,7 +1,7 @@
 from __future__ import unicode_literals
 import frappe
 import json
-from frappe.utils import flt, add_days, cint, nowdate, getdate
+from frappe.utils import flt, add_days, cint, nowdate, getdate,now_datetime
 from frappe import _, sendmail, db
 from erpnext.utilities.product import get_price
 from frappe.model.mapper import get_mapped_doc
@@ -16,6 +16,8 @@ from erpnext.manufacturing.doctype.production_plan.production_plan import Produc
 from erpnext.buying.doctype.supplier.supplier import Supplier
 from erpnext.controllers.accounts_controller import AccountsController, get_payment_terms
 import functools
+from erpnext.manufacturing.doctype.work_order.work_order import get_item_details
+from erpnext.stock.doctype.purchase_receipt.purchase_receipt import PurchaseReceipt
 
 
 @frappe.whitelist()
@@ -54,6 +56,7 @@ def pi_onload(self, method):
 @frappe.whitelist()
 def si_validate(self, method):
 	override_due_date()
+	validate_batch_customer(self)
 
 def before_update_after_submit(self,method):
 	self.set_payment_schedule()
@@ -75,6 +78,23 @@ def get_items_from_sample(self):
 	elif self.get_items_from == "Material Request":
 			self.get_mr_items()
 
+def pe_before_save(self, method):
+	description = ""
+	amount = 0.0
+	grand_total = 0.0
+	for invoice in self.references:
+		description = ''
+		grand_total += invoice.total_amount
+		if invoice.reference_doctype == "Purchase Invoice":
+			doc = frappe.get_doc("Purchase Invoice",invoice.reference_name)
+			for tax in doc.taxes:
+				if tax.add_deduct_tax == "Deduct" or tax.tax_amount < 0:
+					description += (tax.description + "\n")
+					amount += flt(tax.tax_amount)
+					grand_total += amount
+					invoice.db_set("description",description)
+					invoice.db_set("deduct_amount",amount)
+		invoice.db_set("grand_total", grand_total)
 def get_so_items(self):
 		so_list = [d.sales_order for d in self.get("sales_orders", []) if d.sales_order]
 		if not so_list:
@@ -96,22 +116,22 @@ def get_so_items(self):
 				if projected_qty < 0:
 					sample_doc = frappe.get_doc("Outward Sample",sample)
 					for row in sample_doc.details:
-						bom_no = frappe.db.exists("BOM", {'item':row.item_code,'is_active':1,'is_default':1,'docstatus':1})
+						bom_no = frappe.db.exists("BOM", {'item':row.item_name,'is_active':1,'is_default':1,'docstatus':1})
 						
 						if bom_no:
-							bom = frappe.get_doc("BOM", {'item':row.item_code,'is_active':1,'is_default':1,'docstatus':1})
-							item_details.setdefault(row.item_code, frappe._dict({
+							bom = frappe.get_doc("BOM", {'item':row.item_name,'is_active':1,'is_default':1,'docstatus':1})
+							item_details.setdefault(row.item_name, frappe._dict({
 								'planned_qty': 0.0,
 								'bom_no': bom.name,
-								'item_code': row.item_code,
+								'item_code': row.item_name,
 								'concentration' : bom.concentration
 							}))
 							
-							item_details[row.item_code].planned_qty += (flt(abs(projected_qty)) * flt(row.quantity) * flt(row.concentration))/ (flt(sample_doc.total_qty) * flt(bom.concentration) )
+							item_details[row.item_name].planned_qty += (flt(abs(projected_qty)) * flt(row.quantity) * flt(row.concentration))/ (flt(sample_doc.total_qty) * flt(bom.concentration) )
 			
 			items = [values for values in item_details.values()]
 
-		elif self.as_per_actual_qty == 1:															 #condition 2
+		elif self.as_per_actual_qty == 1:														 #condition 2
 			
 			sample_list = [[d.outward_sample, d.quantity,d.actual_qty] for d in self.get("finish_items", []) if d.outward_sample]	
 			if not sample_list:
@@ -122,19 +142,22 @@ def get_so_items(self):
 				diff = actual_qty - quantity #changes here
 				if diff < 0:
 					sample_doc = frappe.get_doc("Outward Sample",sample)
-
 					for row in sample_doc.details:
-						bom_no = frappe.db.exists("BOM", {'item':row.item_code,'is_active':1,'is_default':1,'docstatus':1})
+						bom_no = frappe.db.exists("BOM", {'item':row.item_name,'is_active':1,'is_default':1,'docstatus':1})
+						
+						
 						if bom_no:
-							bom = frappe.get_doc("BOM", {'item':row.item_code,'is_active':1,'is_default':1,'docstatus':1})
-							item_details.setdefault(row.item_code, frappe._dict({
+							bom = frappe.get_doc("BOM", {'item':row.item_name,'is_active':1,'is_default':1,'docstatus':1})
+							#frappe.msgprint(str(bom.name))
+							item_details.setdefault(row.item_name, frappe._dict({
 								'planned_qty': 0.0,
 								'bom_no': bom.name,
-								'item_code': row.item_code,
+								'item_code': row.item_name,
 								'concentration' : bom.concentration
 							}))
-							
-							item_details[row.item_code].planned_qty += (flt(abs(diff)) * flt(row.quantity) * flt(row.concentration)) / (flt(sample_doc.total_qty) * flt(bom.concentration))
+							#frappe.msgprint(str(item_details))
+							#item_details[row.item_name].bom_no = bom.name
+							item_details[row.item_name].planned_qty += (flt(abs(diff)) * flt(row.quantity) * flt(row.concentration)) / (flt(sample_doc.total_qty) * flt(bom.concentration))
 							
 			items = [values for values in item_details.values()]
 
@@ -149,19 +172,19 @@ def get_so_items(self):
 				sample_doc = frappe.get_doc("Outward Sample",sample)
 
 				for row in sample_doc.details:
-					bom_no = frappe.db.exists("BOM", {'item':row.item_code,'is_active':1,'is_default':1,'docstatus':1})
+					bom_no = frappe.db.exists("BOM", {'item':row.item_name,'is_active':1,'is_default':1,'docstatus':1})
 					if bom_no:
-						bom = frappe.get_doc("BOM", {'item':row.item_code,'is_active':1,'is_default':1,'docstatus':1})
+						bom = frappe.get_doc("BOM", {'item':row.item_name,'is_active':1,'is_default':1,'docstatus':1})
 						# frappe.msgprint(str(bom.name))
 					
-						item_details.setdefault(row.item_code, frappe._dict({
+						item_details.setdefault(row.item_name, frappe._dict({
 							'planned_qty': 0.0,
 							'bom_no': bom.name,
-							'item_code': row.item_code,
+							'item_code': row.item_name,
 							'concentration' : bom.concentration
 						}))
 						
-						item_details[row.item_code].planned_qty += (flt(quantity) * flt(row.quantity) * (row.concentration))/ (flt(sample_doc.total_qty)* (bom.concentration))
+						item_details[row.item_name].planned_qty += (flt(quantity) * flt(row.quantity) * (row.concentration))/ (flt(sample_doc.total_qty)* (bom.concentration))
 
 			items = [values for values in item_details.values()]
 			
@@ -380,8 +403,6 @@ def export_lic(self):
 			aal.total_export_qty = sum([flt(d.quantity) for d in aal.exports])
 			aal.total_export_amount = sum([flt(d.fob_value) for d in aal.exports])
 			aal.save()
-	else:
-		frappe.db.commit()
 
 def export_lic_cancel(self):
 	doc_list = list(set([row.advance_authorisation_license for row in self.items if row.advance_authorisation_license]))
@@ -398,8 +419,6 @@ def export_lic_cancel(self):
 		doc.total_export_qty = sum([flt(d.quantity) for d in doc.exports])
 		doc.total_export_amount = sum([flt(d.fob_value) for d in doc.exports])
 		doc.save()
-	else:
-		frappe.db.commit()
 
 
 def import_lic(self):
@@ -427,8 +446,6 @@ def import_lic(self):
 			aal.total_import_qty = sum([flt(d.quantity) for d in aal.imports])
 			aal.total_import_amount = sum([flt(d.cif_value) for d in aal.imports])
 			aal.save()
-	else:
-		frappe.db.commit()
 
 def import_lic_cancel(self):
 	doc_list = list(set([row.advance_authorisation_license for row in self.items if row.advance_authorisation_license]))
@@ -445,8 +462,6 @@ def import_lic_cancel(self):
 		doc.total_import_qty = sum([flt(d.quantity) for d in doc.imports])
 		doc.total_import_amount = sum([flt(d.cif_value) for d in doc.imports])
 		doc.save()
-	else:
-		frappe.db.commit()
 
 @frappe.whitelist()
 def override_po_functions(self, method):
@@ -502,6 +517,10 @@ def stock_entry_before_save(self, method):
 		self.get_stock_and_rate()
 		
 	update_expence_account(self)
+	
+def stock_entry_validate(self,method):
+	if self.volume:
+		self.volume_cost = self.volume * self.volume_rate
 	update_additional_cost(self)
 	
 def get_based_on(self):
@@ -593,11 +612,10 @@ def update_po(self,ignore_permissions = True):
 			po.valuation_rate = last_item.valuation_rate
 
 			po.save()
-			frappe.db.commit()
 
 def update_po_volume(self, po, ignore_permissions = True):
-	if not self.volume:
-		frappe.throw(_("Please add volume before submitting the stock entry"))
+	if not self.volume or not self.volume_cost:
+		frappe.throw(_("Please add volume and rate before submitting the stock entry"))
 
 	if self._action == 'submit':
 		po.volume += self.volume
@@ -609,6 +627,7 @@ def update_po_volume(self, po, ignore_permissions = True):
 	elif self._action == 'cancel':
 		po.volume -= self.volume
 		po.volume_cost -= self.volume_cost
+		po.db_set('batch','')
 		po.save(ignore_permissions = True)
 
 def update_po_transfer_qty(self, po):
@@ -656,7 +675,6 @@ def stock_entry_on_cancel(self, method):
 		update_po_transfer_qty(self, pro_doc)
 
 		pro_doc.save()
-		frappe.db.commit()
 
 def set_po_status(self, pro_doc):
 	status = None
@@ -803,14 +821,14 @@ def update_outward_sample(doc_name):
 			row.db_set('rate', price.price_list_rate)
 			row.db_set('price_list_rate', price.price_list_rate)
 		
-		if row.concentration != 0:
+		if row.concentration:
 			bom_concentration = frappe.db.get_value("BOM",{'item':row.item_name,'is_default':1},'concentration')
-			bomyield = frappe.db.get_value("BOM",{'item':row.item_name,'is_default':1},'batch_yield')						
+			bomyield = flt(frappe.db.get_value("BOM",{'item':row.item_name,'is_default':1},'batch_yield'))					
 		
-			if bom_concentration !=0:
-				row.db_set('rate',(flt(row.price_list_rate)) * flt(row.concentration) / bom_concentration)
+			if bom_concentration:
+				row.db_set('rate',(flt(row.price_list_rate)) * flt(row.concentration) / flt(bom_concentration))
 
-			elif bomyield !=0 & row.batch_yield !=0:
+			elif bomyield and row.batch_yield:
 				row.db_set('rate',(flt(row.price_list_rate)) * flt(bomyield) / row.batch_yield)
 			else:
 				row.db_set('rate',(flt(row.price_list_rate)))
@@ -1236,6 +1254,12 @@ def make_shipping_document(source_name, target_doc=None, ignore_permissions=Fals
 
 	return doclist
 	
+def pr_before_cancel(self,method):
+	PurchaseReceipt.delete_auto_created_batches = delete_auto_created_batches
+
+def delete_auto_created_batches(self):
+	pass
+
 @frappe.whitelist()
 def pr_on_submit(self,method):
 	validate_po_num(self)
@@ -1246,21 +1270,22 @@ def validate_po_num(self):
 			frappe.throw(_("Purchase order is mandatory for Item <b>{0}</b> in row {1}").format(row.item_code,row.idx))
 		
 def validate_purchase_receipt(self):
-	for row in self.items:
-		if row.item_group in ['FINISHED DYES','Raw Material','SEMI FINISHED DYES'] and not row.purchase_order and not row.purchase_receipt:
-			frappe.throw(_("Purchase order and Purchase receipt are mandatory for Item <b>{0}</b> in row {1}").format(row.item_code,row.idx))
-		if row.purchase_receipt:
-			pr_name,pr_item, pr_qty = frappe.db.get_value("Purchase Receipt Item",row.pr_detail,['name','item_code','qty'])
-			if row.item_code == pr_item and row.pr_detail == pr_name:
-				total_qty = frappe.db.sql("""
-								select sum(pii.qty) from `tabPurchase Invoice Item` as pii
-								join `tabPurchase Invoice` as pi on (pii.parent = pi.name)
-								where pii.pr_detail = %s and pi.docstatus != 2
-							""", pr_name)[0][0]
-				#total_qty = sum([flt(d.qty) for d in self.items])
-				if flt(total_qty) != pr_qty:
-					frappe.throw(_("Invoice qty {0} is not matching with purchase receipt qty {1} for item <b>{2}</b>").format(total_qty,pr_qty,row.item_code))
-			
+	if not self.is_return:
+		for row in self.items:
+			if row.item_group in ['FINISHED DYES','Raw Material','SEMI FINISHED DYES'] and not row.purchase_order and not row.purchase_receipt:
+				frappe.throw(_("Purchase order and Purchase receipt are mandatory for Item <b>{0}</b> in row {1}").format(row.item_code,row.idx))
+			if row.purchase_receipt:
+				pr_name,pr_item, pr_qty = frappe.db.get_value("Purchase Receipt Item",row.pr_detail,['name','item_code','qty'])
+				if row.item_code == pr_item and row.pr_detail == pr_name:
+					total_qty = frappe.db.sql("""
+									select sum(pii.qty) from `tabPurchase Invoice Item` as pii
+									join `tabPurchase Invoice` as pi on (pii.parent = pi.name)
+									where pii.pr_detail = %s and pi.docstatus != 2
+								""", pr_name)[0][0]
+					#total_qty = sum([flt(d.qty) for d in self.items])
+					if flt(total_qty) != pr_qty:
+						frappe.throw(_("Invoice qty {0} is not matching with purchase receipt qty {1} for item <b>{2}</b>").format(total_qty,pr_qty,row.item_code))
+				
 @frappe.whitelist()
 def docs_before_naming(self, method):
 	from erpnext.accounts.utils import get_fiscal_year
@@ -1376,7 +1401,6 @@ def create_jv(self, method):
 					frappe.throw(str(e))
 				else:
 					self.db_set('meis_jv',meis_jv.name)
-		frappe.db.commit()
 	
 def cancel_jv(self, method):
 	if self.duty_drawback_jv:
@@ -1388,7 +1412,6 @@ def cancel_jv(self, method):
 		jv = frappe.get_doc("Journal Entry", self.meis_jv)
 		jv.cancel()
 		self.meis_jv = ''
-	frappe.db.commit()
 
 def create_igst_jv(self):
 	abbr = frappe.db.get_value("Company", self.company, 'abbr')
@@ -1423,14 +1446,12 @@ def create_igst_jv(self):
 				jv.save(ignore_permissions=True)
 				self.db_set('gst_jv', jv.name)
 				jv.submit()
-				frappe.db.commit()
 	
 def cancel_igst_jv(self):
 	if self.gst_jv:
 		jv = frappe.get_doc("Journal Entry", self.gst_jv)
 		jv.cancel()
 		self.db_set('gst_jv', '')
-	frappe.db.commit()
 
 @frappe.whitelist()
 def jobwork_update():
@@ -1781,6 +1802,7 @@ def update_expence_account(self):
 			row.expense_account = 'Cost of Goods Sold - %s' % abbr
 			
 def validate_difference(self):
+	self.flags.ignore_permissions = True
 	if self.purpose in ['Material Transfer','Material Transfer for Manufacture','Repack','Manufacture']:
 		if round(self.value_difference/100,0) != round(self.total_additional_costs/100,0):
 			frappe.throw("ValuationError: Value difference between incoming and outgoing amount is higher than additional cost")
@@ -1814,3 +1836,12 @@ def validate_hold_invoice(self):
 				if hasattr(doc,'on_hold'):
 					if doc.on_hold:
 						frappe.throw(_("Row {}: Document <b>{}</b> is on hold".format(row.idx,row.reference_name)))
+
+def validate_batch_customer(self):
+    if self.items:
+        for item in self.items:
+            if item.batch_no:
+                customer = frappe.db.get_value("Batch",item.batch_no,'customer')
+                if customer:
+                    if customer != self.customer:
+                        frappe.throw(_("Row: {} Please Select Correct Batch For Customer: {}".format(item.idx, self.customer)))

@@ -6,7 +6,7 @@ from frappe import _
 from PyPDF2 import PdfFileReader
 
 
-from frappe.utils.pdf import append_pdf, cleanup, read_options_from_html
+from frappe.utils.pdf import get_pdf, cleanup, read_options_from_html
 
 
 @frappe.whitelist()
@@ -16,42 +16,42 @@ def download_pdf(doctype, name, format=None, doc=None, no_letterhead=0):
 	frappe.local.response.filecontent = get_pdf(html)
 	frappe.local.response.type = "pdf"
 
-def get_pdf(html, options=None, output = None):
-	html = scrub_urls(html)
-	html, options = prepare_options(html, options)
-	fname = os.path.join("/tmp", "frappe-pdf-{0}.pdf".format(frappe.generate_hash()))
+# def get_pdf(html, options=None, output = None):
+# 	html = scrub_urls(html)
+# 	html, options = prepare_options(html, options)
+# 	fname = os.path.join("/tmp", "frappe-pdf-{0}.pdf".format(frappe.generate_hash()))
 
-	try:
-		pdfkit.from_string(html, fname, options=options or {})
-		if output:
-			append_pdf(PdfFileReader(fname),output)
-		else:
-			with open(fname, "rb") as fileobj:
-				filedata = fileobj.read()
+# 	try:
+# 		pdfkit.from_string(html, fname, options=options or {})
+# 		if output:
+# 			append_pdf(PdfFileReader(fname),output)
+# 		else:
+# 			with open(fname, "rb") as fileobj:
+# 				filedata = fileobj.read()
 
-	except IOError as e:
-		if ("ContentNotFoundError" in e.message
-			or "ContentOperationNotPermittedError" in e.message
-			or "UnknownContentError" in e.message
-			or "RemoteHostClosedError" in e.message):
+# 	except IOError as e:
+# 		if ("ContentNotFoundError" in e.message
+# 			or "ContentOperationNotPermittedError" in e.message
+# 			or "UnknownContentError" in e.message
+# 			or "RemoteHostClosedError" in e.message):
 
-			# allow pdfs with missing images if file got created
-			if os.path.exists(fname):
-				with open(fname, "rb") as fileobj:
-					filedata = fileobj.read()
+# 			# allow pdfs with missing images if file got created
+# 			if os.path.exists(fname):
+# 				with open(fname, "rb") as fileobj:
+# 					filedata = fileobj.read()
 
-			else:
-				frappe.throw(_("PDF generation failed because of broken image links"))
-		else:
-			raise
+# 			else:
+# 				frappe.throw(_("PDF generation failed because of broken image links"))
+# 		else:
+# 			raise
 
-	finally:
-		cleanup(fname, options)
+# 	finally:
+# 		cleanup(fname, options)
 
-	if output:
-		return output
+# 	if output:
+# 		return output
 
-	return filedata
+# 	return filedata
 
 
 def prepare_options(html, options):

@@ -22,6 +22,7 @@ class JobworkChallan(Document):
 		se = frappe.new_doc("Stock Entry")
 		se.posting_date = self.date
 		se.purpose = "Material Transfer"
+		se.stock_entry_type = "Material Transfer"
 		se.naming_series = "STE-"
 		se.company = self.company
 		
@@ -68,6 +69,7 @@ class JobworkChallan(Document):
 		se = frappe.new_doc("Stock Entry")
 		se.posting_date = received_date
 		se.purpose = "Repack"
+		se.stock_entry_type = "Repack"
 		se.naming_series = "STE-"
 		se.company = self.company
 		

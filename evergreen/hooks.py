@@ -150,7 +150,10 @@ override_whitelisted_methods = {
 
 doc_events = {
 	"Stock Entry": {
-		"validate": "evergreen.batch_valuation.stock_entry_validate",
+		"validate": [
+			"evergreen.batch_valuation.stock_entry_validate",
+			"evergreen.api.stock_entry_validate"
+		],
 		"before_save": "evergreen.api.stock_entry_before_save",
 		"before_submit": "evergreen.api.override_po_functions",
 		"on_submit": [
@@ -202,12 +205,14 @@ doc_events = {
 		'before_naming': "evergreen.batch_valuation.override_batch_autoname",
 	},
 	"Payment Entry": {
-		"on_submit" : "evergreen.api.pe_on_submit"
+		"before_save": "evergreen.api.pe_before_save",
+		"on_submit" : "evergreen.api.pe_on_submit",
 	},
 	"Purchase Receipt": {
 		"validate": "evergreen.batch_valuation.pr_validate",
 		"on_cancel": "evergreen.batch_valuation.pr_on_cancel",
 		"on_submit": "evergreen.api.pr_on_submit",
+		"before_cancel": "evergreen.api.pr_before_cancel"
 	},
 	"Landed Cost Voucher": {
 		"validate": "evergreen.batch_valuation.lcv_validate",

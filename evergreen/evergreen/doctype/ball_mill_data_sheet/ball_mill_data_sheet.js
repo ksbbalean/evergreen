@@ -43,6 +43,15 @@ this.frm.cscript.onload = function(frm) {
 			}
 		}
 	});
+	this.frm.set_query("sales_order",function(doc) {
+		return{
+						query:"evergreen.evergreen.doctype.ball_mill_data_sheet.ball_mill_data_sheet.get_sales_order",
+						filters:{
+							'customer_name':doc.customer_name,	
+							'product_name':doc.product_name,
+						}
+			}
+	});
 }
 
 frappe.ui.form.on("Ball Mill Data Sheet", {

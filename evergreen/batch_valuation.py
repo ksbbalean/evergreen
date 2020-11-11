@@ -40,6 +40,9 @@ def stock_entry_validate(self, method):
 		if self.purpose not in ['Material Transfer', 'Material Transfer for Manufacture']:
 			make_batches(self, 't_warehouse')
 
+	if self.purpose == ['Repack','Manufacture'] and cint(self.from_ball_mill) != 1:
+		self.get_stock_and_rate()
+		
 @frappe.whitelist()
 def stock_entry_on_submit(self, method):
 	if batch_wise_cost():

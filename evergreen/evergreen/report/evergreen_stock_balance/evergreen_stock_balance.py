@@ -67,9 +67,10 @@ def get_conditions(filters):
 	conditions = ""
 	if not filters.get("from_date"):
 		frappe.throw(_("'From Date' is required"))
-
+	frappe.msgprint(str(filters.get("to_date")))
 	if filters.get("to_date"):
-		conditions += " and sle.posting_date <= '%s'" % frappe.db.escape(filters.get("to_date"))
+		conditions += " and sle.posting_date <= %s" % frappe.db.escape(filters.get("to_date"))
+
 	else:
 		frappe.throw(_("'To Date' is required"))
 
@@ -90,6 +91,15 @@ def get_stock_ledger_entries(filters, items):
 			.format(', '.join(['"' + frappe.db.escape(i, percent=False) + '"' for i in items]))
 
 	conditions = get_conditions(filters)
+
+	# frappe.throw("""select
+	# 		sle.item_code, warehouse, sle.posting_date, sle.actual_qty, sle.valuation_rate,
+	# 		sle.company, sle.voucher_type, sle.qty_after_transaction, sle.stock_value_difference
+	# 	from
+	# 		`tabStock Ledger Entry` sle force index (posting_sort_index)
+	# 	where sle.docstatus < 2 %s %s
+	# 	order by sle.posting_date, sle.posting_time, sle.name""" %
+	# 	(item_conditions_sql, conditions))
 
 	return frappe.db.sql("""
 		select

@@ -84,6 +84,7 @@ class JobworkFinish(Document):
 		se = frappe.new_doc("Stock Entry")
 		se.posting_date = self.received_date
 		se.purpose = "Repack"
+		se.stock_entry_type = "Repack"
 		se.naming_series = "STE-"
 		se.company = self.company
 		se.volume = self.volume
@@ -125,6 +126,7 @@ class JobworkFinish(Document):
 
 		for row in self.additional_costs:
 			se.append('additional_costs', {
+				'expense_account': row.expense_account,
 				'description': row.description,
 				'amount': row.amount,
 			})
@@ -150,8 +152,10 @@ class JobworkFinish(Document):
 			frappe.msgprint("Cancelled Stock Entry - <a href='{url}'>{doc}</a>".format(url=url, doc=frappe.bold(se.name)))
 
 	def update_additional_cost(self):
+		abbr = frappe.db.get_value("Company",self.company,'abbr')
 		if self.is_new() and not self.amended_from:
 			self.append("additional_costs",{
+				'expense_account':'Expenses Included In Valuation - {}'.format(abbr),
 				'description': "Spray drying cost",
 				'amount': self.volume_cost
 			})
