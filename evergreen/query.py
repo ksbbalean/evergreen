@@ -6,6 +6,7 @@ from erpnext.utilities.product import get_price
 from frappe.desk.reportview import get_match_cond, get_filters_cond
 from frappe.utils import nowdate, flt
 
+@frappe.whitelist()
 def get_batch_no(doctype, txt, searchfield, start, page_len, filters):
 	cond = ""
 

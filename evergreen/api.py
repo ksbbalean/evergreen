@@ -1029,7 +1029,7 @@ def get_items(customer):
 	return frappe.db.sql("""
 		SELECT item_code FROM `tabCustomer Item` WHERE %s ORDER BY idx"""% where_clause, as_dict=1)
 
-
+@frappe.whitelist()
 def new_item_query(doctype, txt, searchfield, start, page_len, filters, as_dict=False):
 	conditions = []
 
@@ -1065,7 +1065,7 @@ def new_item_query(doctype, txt, searchfield, start, page_len, filters, as_dict=
 			}, as_dict=as_dict)
 
  # searches for customer
-@frappe.whitelist(allow_guest = 1)
+@frappe.whitelist()
 def new_customer_query(doctype, txt, searchfield, start, page_len, filters):
 	conditions = []
 	meta = frappe.get_meta("Customer")
