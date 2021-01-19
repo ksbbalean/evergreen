@@ -58,7 +58,7 @@ def make_transfer_batches(self):
 		has_batch_no = frappe.db.get_value('Item', row.item_code, 'has_batch_no')
 		if has_batch_no:
 			if row.batch_no:
-				if frappe.db.get_value("Batch", row.batch_no, 'valuation_rate') == row.valuation_rate:
+				if frappe.db.get_value("Stock Ledger Entry", {'company':self.company,'batch_no':row.batch_no},'valuation_rate') == row.valuation_rate:
 					continue
 
 			batch = frappe.new_doc("Batch")
@@ -131,6 +131,8 @@ def make_batches(self, warehouse_field):
 
 			has_batch_no = frappe.db.get_value('Item', row.item_code, 'has_batch_no')
 			if has_batch_no:
+				if row.batch_no and row.valuation_rate == frappe.db.get_value("Stock Ledger Entry", {'company':self.company,'warehouse':row.get(warehouse_field),'batch_no':row.batch_no,'incoming_rate':('!=', 0)},'incoming_rate'):
+					continue
 				batch = frappe.new_doc("Batch")
 				batch.item = row.item_code
 				batch.supplier = getattr(self, 'supplier', None)
@@ -164,10 +166,11 @@ def delete_batches(self, warehouse):
 			row.batch_no = ''
 			row.db_set('batch_no', '')
 			#check_if_doc_is_linked(batch_no)
-			frappe.delete_doc("Batch", batch_no.name)
+			try:
+				frappe.delete_doc("Batch", batch_no.name)
+			except:
+				pass 
 			row.db_set('batch_no', '')
-	else:
-		frappe.db.commit()
 
 
 @frappe.whitelist()

@@ -1,0 +1,23 @@
+{
+    "aggregate_function_based_on": "",
+    "creation": "2021-01-12 10:38:10.807671",
+    "docstatus": 0,
+    "doctype": "Number Card",
+    "document_type": "Outward Sample",
+    "dynamic_filters_json": "[]",
+    "filters_json": "[[\"Outward Sample\",\"date\",\"Timespan\",\"last month\",false],[\"Outward Sample\",\"docstatus\",\"=\",\"1\",false]]",
+    "function": "Count",
+    "idx": 0,
+    "is_public": 1,
+    "is_standard": 1,
+    "label": "Monthly Total Outward Sample",
+    "modified": "2021-01-12 10:40:22.863762",
+    "modified_by": "Administrator",
+    "module": "Evergreen",
+    "name": "Monthly Total Outward Sample",
+    "owner": "Administrator",
+    "report_function": "Sum",
+    "show_percentage_stats": 1,
+    "stats_time_interval": "Monthly",
+    "type": "Document Type"
+   }

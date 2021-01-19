@@ -11,6 +11,11 @@ app_color = "orange"
 app_email = "info@finbyz.com"
 app_license = "GPL 3.0"
 
+
+#payment term override
+from evergreen.api import get_due_date
+from erpnext.controllers import accounts_controller
+accounts_controller.get_due_date = get_due_date
 # Includes in <head>
 # ------------------
 
@@ -223,6 +228,7 @@ doc_events = {
 		"validate": "evergreen.api.item_validate",
 	},
 	"Delivery Note": {
+		"validate":"evergreen.api.dn_validate",
 		"on_submit": "evergreen.api.dn_on_submit",
 		"before_cancel": "evergreen.api.dn_before_cancel",
 	},
@@ -233,7 +239,7 @@ doc_events = {
 		"before_naming": "evergreen.api.docs_before_naming",
 	},
 	"Fiscal Year": {
-		'before_save': 'elkins.api.fiscal_before_save'
+		'before_save': 'evergreen.api.fiscal_before_save'
 	},
 }
 

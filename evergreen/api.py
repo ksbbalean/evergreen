@@ -1,7 +1,7 @@
 from __future__ import unicode_literals
 import frappe
 import json
-from frappe.utils import flt, add_days, cint, nowdate, getdate,now_datetime
+from frappe.utils import flt, add_days, cint, nowdate, getdate,now_datetime, add_months, get_last_day
 from frappe import _, sendmail, db
 from erpnext.utilities.product import get_price
 from frappe.model.mapper import get_mapped_doc
@@ -24,17 +24,18 @@ from erpnext.stock.doctype.purchase_receipt.purchase_receipt import PurchaseRece
 def si_on_submit(self, method):
 	export_lic(self)
 	create_jv(self, method)
-	create_igst_jv(self)
+	#create_igst_jv(self)
 
 @frappe.whitelist()
 def si_on_cancel(self, method):
 	export_lic_cancel(self)
 	cancel_jv(self, method)
-	cancel_igst_jv(self)
+	#cancel_igst_jv(self)
 
 @frappe.whitelist()
 def pe_on_submit(self, method):
-	validate_hold_invoice(self)
+	pass
+	#validate_hold_invoice(self)
 	#validate_approval_key(self)
 
 def validate_approval_key(self):
@@ -57,6 +58,7 @@ def pi_onload(self, method):
 def si_validate(self, method):
 	override_due_date()
 	validate_batch_customer(self)
+	validate_exchange_rate(self)
 
 def before_update_after_submit(self,method):
 	self.set_payment_schedule()
@@ -64,6 +66,7 @@ def before_update_after_submit(self,method):
 @frappe.whitelist()
 def pi_validate(self, method):
 	override_due_date()
+	validate_exchange_rate(self)
 	
 @frappe.whitelist()
 def override_proplan_functions():
@@ -1301,7 +1304,10 @@ def docs_before_naming(self, method):
 		fy_years = fy.split("-")
 		fiscal = fy_years[0][2:] + fy_years[1][2:]
 		self.fiscal = fiscal
-	
+
+def dn_validate(self,method):
+	validate_exchange_rate(self)
+
 @frappe.whitelist()
 def dn_on_submit(self, method):
 	update_sales_invoice(self)
@@ -1365,93 +1371,13 @@ def create_jv(self, method):
 				
 				#self.save(ignore_permissions=True)
 		
-		if self.total_meis:
-			meis_receivable_account = frappe.db.get_value("Company", { "company_name": self.company}, "meis_receivable_account")
-			meis_income_account = frappe.db.get_value("Company", { "company_name": self.company}, "meis_income_account")
-			meis_cost_center = frappe.db.get_value("Company", { "company_name": self.company}, "meis_cost_center")
-			if not meis_receivable_account:
-				frappe.throw(_("Set MEIS Receivable Account in Company"))
-			elif not meis_income_account:
-				frappe.throw(_("Set MEIS Income Account in Company"))
-			elif not meis_cost_center:
-				frappe.throw(_("Set MEIS Cost Center in Company"))
-			else:
-				meis_jv = frappe.new_doc("Journal Entry")
-				meis_jv.voucher_type = "MEIS Entry"
-				meis_jv.posting_date = self.posting_date
-				meis_jv.company = self.company
-				meis_jv.cheque_no = self.name
-				meis_jv.cheque_date = self.posting_date
-				meis_jv.user_remark = "MEIS against " + self.name + " for " + self.customer
-				meis_jv.append("accounts", {
-					"account": meis_receivable_account,
-					"cost_center": meis_cost_center,
-					"debit_in_account_currency": self.total_meis
-				})
-				meis_jv.append("accounts", {
-					"account": meis_income_account,
-					"cost_center": meis_cost_center,
-					"credit_in_account_currency": self.total_meis
-				})
-				
-				try:
-					meis_jv.save(ignore_permissions=True)
-					meis_jv.submit()
-				except Exception as e:
-					frappe.throw(str(e))
-				else:
-					self.db_set('meis_jv',meis_jv.name)
+		
 	
 def cancel_jv(self, method):
 	if self.duty_drawback_jv:
 		jv = frappe.get_doc("Journal Entry", self.duty_drawback_jv)
 		jv.cancel()
 		self.duty_drawback_jv = ''
-	
-	if self.meis_jv:
-		jv = frappe.get_doc("Journal Entry", self.meis_jv)
-		jv.cancel()
-		self.meis_jv = ''
-
-def create_igst_jv(self):
-	abbr = frappe.db.get_value("Company", self.company, 'abbr')
-	
-	if len(self.taxes):
-		for row in self.taxes:
-			if self.export_type == "With Payment of Tax" and self.currency != "INR" and 'IGST' in row.account_head:
-				jv = frappe.new_doc("Journal Entry")
-				jv.voucher_type = "Export IGST Entry"
-				jv.posting_date = self.posting_date
-				jv.company = self.company
-				jv.cheque_no = self.invoice_no
-				jv.cheque_date = self.posting_date
-				jv.multi_currency = 1
-				#jv.user_remark = "IGST Payable against" + self.name + " for " + self.customer
-					
-				jv.append("accounts", {
-					"account": 'Sales - %s' % abbr,
-					"cost_center": 'Main - %s' % abbr,
-					"debit_in_account_currency": row.base_tax_amount
-				})
-				jv.append("accounts", {
-					"account": self.debit_to,
-					"cost_center": 'Main - %s' % abbr,
-					"exchange_rate":  self.conversion_rate,
-					"party_type": 'Customer',
-					"party": self.customer,
-					"reference_type": 'Sales Invoice',
-					"reference_name": self.name,
-					"credit_in_account_currency": row.tax_amount_after_discount_amount
-				})
-				jv.save(ignore_permissions=True)
-				self.db_set('gst_jv', jv.name)
-				jv.submit()
-	
-def cancel_igst_jv(self):
-	if self.gst_jv:
-		jv = frappe.get_doc("Journal Entry", self.gst_jv)
-		jv.cancel()
-		self.db_set('gst_jv', '')
 
 @frappe.whitelist()
 def jobwork_update():
@@ -1603,25 +1529,27 @@ def get_items(self):
 
 def get_transfered_raw_materials(self):
 	transferred_materials = frappe.db.sql("""
-		select
-			item_name, original_item, item_code, qty, sed.t_warehouse as warehouse,
-			description, stock_uom, expense_account, cost_center, batch_no
-		from `tabStock Entry` se,`tabStock Entry Detail` sed
-		where
-			se.name = sed.parent and se.docstatus=1 and se.purpose='Material Transfer for Manufacture'
-			and se.work_order= %s and ifnull(sed.t_warehouse, '') != ''
-	""", self.work_order, as_dict=1)
+			select
+				item_name, original_item, item_code, sum(qty) as qty, sed.t_warehouse as warehouse,
+				description, stock_uom, expense_account, cost_center
+			from `tabStock Entry` se,`tabStock Entry Detail` sed
+			where
+				se.name = sed.parent and se.docstatus=1 and se.purpose='Material Transfer for Manufacture'
+				and se.work_order= %s and ifnull(sed.t_warehouse, '') != ''
+			group by sed.item_code, sed.t_warehouse
+		""", self.work_order, as_dict=1)
 
 	materials_already_backflushed = frappe.db.sql("""
-		select
-			item_code, sed.s_warehouse as warehouse, sum(qty) as qty
-		from
-			`tabStock Entry` se, `tabStock Entry Detail` sed
-		where
-			se.name = sed.parent and se.docstatus=1
-			and (se.purpose='Manufacture' or se.purpose='Material Consumption for Manufacture')
-			and se.work_order= %s and ifnull(sed.s_warehouse, '') != ''
-	""", self.work_order, as_dict=1)
+			select
+				item_code, sed.s_warehouse as warehouse, sum(qty) as qty
+			from
+				`tabStock Entry` se, `tabStock Entry Detail` sed
+			where
+				se.name = sed.parent and se.docstatus=1
+				and (se.purpose='Manufacture' or se.purpose='Material Consumption for Manufacture')
+				and se.work_order= %s and ifnull(sed.s_warehouse, '') != ''
+			group by sed.item_code, sed.s_warehouse
+		""", self.work_order, as_dict=1)
 
 	backflushed_materials= {}
 	for d in materials_already_backflushed:
@@ -1845,3 +1773,46 @@ def validate_batch_customer(self):
                 if customer:
                     if customer != self.customer:
                         frappe.throw(_("Row: {} Please Select Correct Batch For Customer: {}".format(item.idx, self.customer)))
+
+def validate_exchange_rate(self):
+	if self.doctype == "Sales Invoice":
+		doc_type = "Sales Invoice Item"
+	elif self.doctype == "Purchase Invoice":
+		doc_type = "Purchase Invoice Item"
+	elif self.doctype == "Delivery Note":
+		doc_type = "Delivery Note Item"
+
+	doc_items = frappe.get_doc({"doctype":doc_type})
+	if self._action == 'submit':
+		if self.items:
+			for item in self.items:
+				if hasattr(doc_items,'purchase_receipt'):
+					if item.purchase_receipt:
+						pr_conversion_rate = frappe.db.get_value("Purchase Receipt",item.purchase_receipt,'conversion_rate')
+						if self.conversion_rate != pr_conversion_rate:
+							frappe.throw("Row {}: Exchange Rate is Different in this Purchase Receipt - {}".format(item.idx,item.purchase_receipt))
+
+				elif hasattr(doc_items,'against_sales_invoice'):
+					if item.against_sales_invoice:
+						pr_conversion_rate = frappe.db.get_value("Sales Invoice",item.against_sales_invoice,'conversion_rate')
+						if self.conversion_rate != pr_conversion_rate:
+							frappe.throw("Row {}: Exchange Rate is Different in this Sales Invoice - {}".format(item.idx,item.against_sales_invoice))
+
+				elif hasattr(doc_items,'delivery_note'):
+					if item.delivery_note:
+						pr_conversion_rate = frappe.db.get_value("Delivery Note",item.delivery_note,'conversion_rate')
+						if self.conversion_rate != pr_conversion_rate:
+							frappe.throw("Row {}: Exchange Rate is Different in this Delivery Note - {}".format(item.idx,item.delivery_note))
+
+def get_due_date(term, posting_date=None, bill_date=None):
+	due_date = None
+	date = bill_date or posting_date
+	if term.due_date_based_on == "Day(s) after invoice date":
+		due_date = add_days(date, term.credit_days)
+	elif term.due_date_based_on == 'Day(s) after bl date':
+		due_date = add_days(date, term.credit_days)
+	elif term.due_date_based_on == "Day(s) after the end of the invoice month":
+		due_date = add_days(get_last_day(date), term.credit_days)
+	elif term.due_date_based_on == "Month(s) after the end of the invoice month":
+		due_date = add_months(get_last_day(date), term.credit_months)
+	return due_date
