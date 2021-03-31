@@ -16,6 +16,17 @@ app_license = "GPL 3.0"
 from evergreen.api import get_due_date
 from erpnext.controllers import accounts_controller
 accounts_controller.get_due_date = get_due_date
+
+
+# overide reason bcz raw material changes on change event of fg_completed_qty
+from erpnext.stock.doctype.stock_entry.stock_entry import StockEntry
+from evergreen.api import get_items
+StockEntry.get_items = get_items
+
+from erpnext.controllers.stock_controller import StockController
+from evergreen.api import delete_auto_created_batches
+StockController.delete_auto_created_batches = delete_auto_created_batches
+
 # Includes in <head>
 # ------------------
 
@@ -34,7 +45,16 @@ accounts_controller.get_due_date = get_due_date
 	# "/assets/css/evergreen.min.css",
 	# "assets/css/summernote.min.css"
 # ]
-doctype_js = {"Production Plan": "public/js/doctype_js/production_plan.js"}
+doctype_js = {
+	"Production Plan": "public/js/doctype_js/production_plan.js",
+	"Sales Invoice": "public/js/doctype_js/sales_invoice.js",
+	"Purchase Invoice": "public/js/doctype_js/purchase_invoice.js",
+	"Purchase Order": "public/js/doctype_js/purchase_order.js",
+	"Delivery Note" : "public/js/doctype_js/delivery_note.js",
+	"Purchase Receipt" : "public/js/doctype_js/purchase_receipt.js",
+	"Sales Order": "public/js/doctype_js/sales_order.js",
+	"Stock Entry": "public/js/doctype_js/stock_entry.js",
+}
 	
 
 # include js, css files in header of web template

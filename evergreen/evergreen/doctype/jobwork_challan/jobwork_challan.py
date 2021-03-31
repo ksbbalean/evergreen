@@ -47,7 +47,6 @@ class JobworkChallan(Document):
 			se.save()
 			self.db_set('stock_entry', se.name)
 			se.submit()
-			frappe.db.commit()
 			url = get_url_to_form("Stock Entry", se.name)
 			frappe.msgprint("New Stock Entry - <a href='{url}'>{doc}</a> created for Material Transfer".format(url=url, doc=frappe.bold(se.name)))
 		except:
@@ -62,7 +61,6 @@ class JobworkChallan(Document):
 			self.db_set('stock_entry','')
 			se.cancel()
 			url = get_url_to_form("Stock Entry", se.name)
-			frappe.db.commit()
 			frappe.msgprint("Cancelled Stock Entry - <a href='{url}'>{doc}</a>".format(url=url, doc=frappe.bold(se.name)))
 		
 	def return_stock_entry(self, qty, received_date):

@@ -127,6 +127,7 @@ def make_quotation(source_name, target_doc=None):
 
 	return doclist
 
+@frappe.whitelist()
 def get_outward_sample(doctype, txt, searchfield, start, page_len, filters, as_dict):
 	return frappe.db.sql("""
 		SELECT 

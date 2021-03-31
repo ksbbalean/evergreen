@@ -7,7 +7,7 @@ def get_data():
 		{
 			"module_name": "Evergreen",
 			"color": "orange",
-			"icon": "octicon octicon-beaker",
+			"icon": "icon finbyz-chemical",
 			"type": "module",
 			"label": _("Evergreen")
 		}

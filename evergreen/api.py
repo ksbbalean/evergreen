@@ -19,7 +19,6 @@ import functools
 from erpnext.manufacturing.doctype.work_order.work_order import get_item_details
 from erpnext.stock.doctype.purchase_receipt.purchase_receipt import PurchaseReceipt
 
-
 @frappe.whitelist()
 def si_on_submit(self, method):
 	export_lic(self)
@@ -59,9 +58,20 @@ def si_validate(self, method):
 	override_due_date()
 	validate_batch_customer(self)
 	validate_exchange_rate(self)
-
+	set_export_type(self)
+	
 def before_update_after_submit(self,method):
 	self.set_payment_schedule()
+
+def set_export_type(self):
+	if self.taxes:
+		for row in self.taxes:
+			if row.account_head.find('GST') != -1:
+				self.export_type = 'With Payment of Tax'
+			else:
+				self.export_type = 'Without Payment of Tax'
+	else:
+		self.export_type = 'Without Payment of Tax'				
 
 @frappe.whitelist()
 def pi_validate(self, method):
@@ -1022,7 +1032,7 @@ def fetch_item_group(self):
 	("item_group", item_group)
 
 @frappe.whitelist()
-def get_items(customer):	
+def get_items_(customer):	
 	where_clause = ''
 	where_clause += customer and " parent = '%s' " % customer.replace("'", "\'") or ''
 	
@@ -1742,7 +1752,7 @@ def batch_qty_validation_with_date_time(self):
 	if self.batch_no and not self.get("allow_negative_stock"):
 		batch_bal_after_transaction = flt(frappe.db.sql("""select sum(actual_qty)
 			from `tabStock Ledger Entry`
-			where warehouse=%s and item_code=%s and batch_no=%s and concat(posting_date, ' ', posting_time) <= %s %s """,
+			where warehouse=%s and item_code=%s and batch_no=%s and  timestamp(posting_date, posting_time) <= timestamp(%s, %s) """,
 			(self.warehouse, self.item_code, self.batch_no, self.posting_date, self.posting_time))[0][0])
 		
 		if flt(batch_bal_after_transaction) < 0:

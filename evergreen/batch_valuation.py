@@ -58,7 +58,7 @@ def make_transfer_batches(self):
 		has_batch_no = frappe.db.get_value('Item', row.item_code, 'has_batch_no')
 		if has_batch_no:
 			if row.batch_no:
-				if frappe.db.get_value("Stock Ledger Entry", {'company':self.company,'batch_no':row.batch_no},'valuation_rate') == row.valuation_rate:
+				if row.valuation_rate == frappe.db.get_value("Stock Ledger Entry", {'company':self.company,'warehouse':row.get('t_warehouse'),'batch_no':row.batch_no,'incoming_rate':('!=', 0)},"incoming_rate"):
 					continue
 
 			batch = frappe.new_doc("Batch")
@@ -132,6 +132,7 @@ def make_batches(self, warehouse_field):
 			has_batch_no = frappe.db.get_value('Item', row.item_code, 'has_batch_no')
 			if has_batch_no:
 				if row.batch_no and row.valuation_rate == frappe.db.get_value("Stock Ledger Entry", {'company':self.company,'warehouse':row.get(warehouse_field),'batch_no':row.batch_no,'incoming_rate':('!=', 0)},'incoming_rate'):
+				#if row.batch_no and not frappe.db.exists("Stock Ledger Entry", {'company':self.company,'warehouse':row.get(warehouse_field),'batch_no':row.batch_no}):
 					continue
 				batch = frappe.new_doc("Batch")
 				batch.item = row.item_code
@@ -196,6 +197,7 @@ def batch_autoname(self):
 	self.batch_id = name
 	self.name = name
 
+@frappe.whitelist()
 def get_batch_no(doctype, txt, searchfield, start, page_len, filters):
 	cond = ""
 
@@ -289,6 +291,7 @@ def validate_batch_actual_qty(self):
 				if batch_qty < row.stock_qty:
 					frappe.throw(_("The batch <b>{0}</b> does not have sufficient quantity for item <b>{1}</b> in row {2}.".format(row.batch_no, row.item_code, d.idx)))
 
+@frappe.whitelist()
 def get_batch(doctype, txt, searchfield, start, page_len, filters):
 	cond = ""
 
